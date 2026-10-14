@@ -1,0 +1,1 @@
+{ "name": "ooze-o-meter", "version": "0.1.0", "description": "A bubbling ooze canister and a lab log that fill live while rsync moves files to and from your sites. Bring your own mascot.", "author": { "name": "1UP Creative" }, "types": "./types/index.d.ts" }

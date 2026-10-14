@@ -1,0 +1,20 @@
+{
+  "name": "SERVO-CRAB",
+  "lab": "OOZE LAB · EXPERIMENT 001",
+  "moods": {
+    "standby": "ON STANDBY",
+    "observing": "OBSERVING",
+    "nearly": "NEARLY THERE!",
+    "done": "VICTORIOUS",
+    "error": "SHELL-SHOCKED"
+  },
+  "standby": ["OOZE-O-METER READY", "PIPE TRANSFERS THROUGH OOZE-XFER"],
+  "faces": {
+    "base": "faces/base.jpg",
+    "blink": "faces/blink.jpg",
+    "excited": "faces/excited.jpg",
+    "done": "faces/done.jpg",
+    "warm": "faces/warm.jpg"
+  },
+  "sound": "ding.mp3"
+}

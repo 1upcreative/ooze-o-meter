@@ -1,0 +1,6 @@
+{
+  "name": "1upcreative",
+  "description": "Claude Code mods from 1UP Creative for people who build and ship websites.",
+  "owner": { "name": "1UP Creative" },
+  "plugins": [{ "name": "ooze-o-meter", "source": "./" }]
+}

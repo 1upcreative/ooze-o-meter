@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# ooze-xfer — rsync with a live progress feed for the Ooze-o-Meter pane.
+#
+#   ooze-xfer [--label "Site uploads"] <any rsync args...>
+#
+# Same args as rsync (macOS openrsync or GNU). Runs a dry pass to learn the byte total,
+# then the real pass with --progress, and writes ~/.claude/ooze/transfer.json as it goes.
+# Exit code is rsync's own. Prints a one-line summary instead of the per-file firehose.
+set -uo pipefail
+
+OOZE_DIR="${OOZE_DIR:-$HOME/.claude/ooze}"
+RSYNC="${OOZE_RSYNC:-rsync}"
+SELF="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"   # follow the PATH symlink
+HERE="$(cd "$(dirname "$SELF")" && pwd)"
+mkdir -p "$OOZE_DIR"
+
+LABEL=""
+if [ "${1:-}" = "--label" ]; then LABEL="$2"; shift 2; fi
+[ $# -lt 2 ] && { echo "usage: ooze-xfer [--label TEXT] <rsync args> SRC... DEST" >&2; exit 2; }
+
+# Direction: a host:path destination is an upload, a host:path source a download.
+ARGS=("$@"); DEST="${ARGS[$((${#ARGS[@]}-1))]}"; DIRECTION="local"
+is_remote() { [[ "$1" =~ ^[A-Za-z0-9._@-]+: ]]; }
+if is_remote "$DEST"; then DIRECTION="up"
+else
+  for ((i=0; i<${#ARGS[@]}-1; i++)); do
+    a="${ARGS[$i]}"; [[ "$a" == -* ]] && continue
+    is_remote "$a" && { DIRECTION="down"; break; }
+  done
+fi
+[ -z "$LABEL" ] && LABEL="$(basename "${DEST%/}")"
+
+# Pre-flight notes for the lab log, one "level|text" per line.
+NOTES=""
+note() { NOTES+="$1|$2"$'\n'; }
+for a in "$@"; do
+  case "$a" in
+    --del|--delete|--delete-*) note warn "--DELETE IN ARGS: FILES ON THE OTHER END CAN BE REMOVED" ;;
+    --dry-run) note info "DRY RUN — NOTHING WILL ACTUALLY MOVE" ;;
+    --*) ;;
+    -*n*) [[ "$a" =~ ^-[A-Za-z]+$ ]] && note info "DRY RUN — NOTHING WILL ACTUALLY MOVE" ;;
+  esac
+done
+[ "$DIRECTION" = "up" ] && note warn "WRITING TO ${DEST%%:*} — THAT END IS LIVE"
+
+ERRF="$OOZE_DIR/last-stderr.txt"
+: > "$ERRF"
+
+ID="$(date +%s)-$$"
+export OOZE_NOTES="$NOTES" OOZE_ERRF="$ERRF"
+export OOZE_START="$(date +%s)" OOZE_DIR OOZE_ID="$ID" OOZE_LABEL="$LABEL" OOZE_DIRECTION="$DIRECTION"
+
+python3 -I "$HERE/ooze_feed.py" counting 0 </dev/null
+
+# Byte total = sizes of what the dry pass would move (dirs skipped). openrsync's
+# "Total transferred file size" reads 0 on a remote dry run, so --stats can't be trusted.
+TOTAL=$("$RSYNC" -n --out-format='%l %n' "$@" 2>/dev/null \
+  | awk '$1 ~ /^[0-9]+$/ && $NF !~ /\/$/ { s += $1 } END { printf "%.0f", s + 0 }')
+TOTAL="${TOTAL:-0}"
+
+START=$(date +%s)
+# rsync's complaints go to a file the feed reads at the end, then on to the terminal.
+"$RSYNC" --progress "$@" 2>"$ERRF" | python3 -I "$HERE/ooze_feed.py" running "$TOTAL"
+CODE=${PIPESTATUS[0]}
+[ -s "$ERRF" ] && cat "$ERRF" >&2
+
+if [ "$CODE" -eq 0 ]; then
+  python3 -I "$HERE/ooze_feed.py" done "$TOTAL" </dev/null
+else
+  python3 -I "$HERE/ooze_feed.py" error "$TOTAL" "$CODE" </dev/null
+fi
+echo "ooze-xfer: $DIRECTION '$LABEL' — $(python3 -I -c "import sys;n=int(sys.argv[1]);u=['B','KB','MB','GB','TB'];i=0
+while n>=1024 and i<4: n/=1024;i+=1
+print(f'{n:.1f} {u[i]}')" "$TOTAL") in $(( $(date +%s) - START ))s, rsync exit $CODE"
+exit "$CODE"
