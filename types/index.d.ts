@@ -29,8 +29,23 @@ export type LogLine = { text: string; at: number; t: string; level?: NoteLevel }
 /** The lab log of one transfer, newest last. */
 export type Log = { id: string; lines: LogLine[] }
 
+/** The deploy light: one deploy run via ooze-deploy, plus the last few that finished. */
+export type DeployState = 'running' | 'done' | 'error'
+export type Deploy = {
+  id: string
+  label: string
+  note: string
+  state: DeployState
+  step: string
+  steps: { at: number; text: string }[]
+  startedAt: number
+  endedAt: number
+  updatedAt: number
+  history?: { label: string; note: string; state: DeployState; startedAt: number; endedAt: number }[]
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'ooze-o-meter': { xfer: Xfer | null; dinged: string | null; log: Log | null }
+    'ooze-o-meter': { xfer: Xfer | null; dinged: string | null; log: Log | null; deploy: Deploy | null; deployDinged: string | null }
   }
 }

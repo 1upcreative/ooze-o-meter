@@ -14,7 +14,7 @@
 // only added while it is still playing: Chromium never applies the frozen end of a
 // one-shot that finished before the drawing loaded, so a finished look must not need it.
 
-import type { Log, LogLine, Xfer } from '../types'
+import type { Deploy, Log, LogLine, Xfer } from '../types'
 import { clockText, elapsedSeconds, size } from './format'
 import { visibleLines } from './log'
 
@@ -38,7 +38,7 @@ export const DEFAULT_TEXT: MascotText = {
 }
 
 const W = 420
-const H = 562
+const H = 614
 const INK = '#111'
 const OOZE = '#39ff14'
 const PHOSPHOR = '#7dff5a'
@@ -53,6 +53,7 @@ const CONTAIN = { x: 214, y: 74, w: 196, h: 226 }
 const LOG = { x: 10, y: 312, w: 400, h: 150 }
 const TILES_Y = 470
 const TILE_H = 82
+const DEPLOY = { x: 10, y: 560, w: 400, h: 46 }
 const FACE = { cx: 108, cy: 186, r: 76 }
 const TUBE = { x: 262, y: 128, w: 96, h: 136 }
 const SCREEN = { x: 22, y: 338, w: 376, h: 112 }
@@ -391,6 +392,43 @@ function tiles(x: Xfer | null): string {
     + tile(2, 'TIME', clockText(elapsed), '', x.state === 'running' && x.eta > 0 ? `ETA ${clockText(x.eta)}` : x.state === 'done' ? 'TOTAL' : 'ELAPSED')
 }
 
+// ── Deploy light ───────────────────────────────────────────────────────────────
+
+function clock(ms: number): string {
+  return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
+function took(d: Deploy): string {
+  const s = Math.max(0, Math.round((d.endedAt - d.startedAt) / 1000))
+  return s < 60 ? `${s}S` : clockText(s)
+}
+
+/** One strip under the tiles: a lamp (amber while a deploy runs, green or red when it ends) and what it says. */
+function deployLight(d: Deploy | null, now: number): string {
+  const p = DEPLOY
+  const color = d === null ? '#4a5a4a' : d.state === 'running' ? AMBER : d.state === 'done' ? OOZE : RED
+  const head = d === null ? 'DEPLOY LIGHT · NO DEPLOYS YET'
+    : d.state === 'running' ? `DEPLOYING · ${d.label}`
+    : d.state === 'done' ? `✓ DEPLOYED · ${d.label}${d.note ? ` · ${d.note}` : ''}`
+    : `✕ DEPLOY FAILED · ${d.label}`
+  const sub = d === null ? 'RUN A DEPLOY THROUGH OOZE-DEPLOY'
+    : d.state === 'running' ? (d.step || 'WARMING UP...')
+    : d.state === 'done' ? `${clock(d.endedAt)} · TOOK ${took(d)}`
+    : `${clock(d.endedAt)}${d.note ? ` · ${d.note}` : ''}`
+  const pulse = d?.state === 'running'
+    ? `<animate attributeName="opacity" values="1;0.35;1" dur="1.2s" begin="${phase(now, 1.2)}" repeatCount="indefinite"/>`
+    : ''
+  const cx = p.x + 26
+  const cy = p.y + p.h / 2
+  return `
+  ${panel(p, '')}
+  <circle cx="${cx}" cy="${cy}" r="10" fill="${INK}" stroke="#2a3b2a" stroke-width="1.5"/>
+  <circle cx="${cx}" cy="${cy}" r="6.5" fill="${color}" ${d === null ? '' : 'filter="url(#glow)"'}>${pulse}</circle>
+  <circle cx="${cx - 2}" cy="${cy - 2}" r="1.8" fill="#fff" opacity="${d === null ? 0.15 : 0.55}"/>
+  <text x="${cx + 20}" y="${cy - 3}" font-family="${MONO}" font-size="9.5" font-weight="bold" letter-spacing="1.2" fill="${d?.state === 'error' ? RED : PHOSPHOR}">${esc(fit(head.toUpperCase(), 52))}</text>
+  <text x="${cx + 20}" y="${cy + 11}" font-family="${MONO}" font-size="8" letter-spacing="0.8" fill="#8fb88a">${esc(fit(sub.toUpperCase(), 58))}</text>`
+}
+
 // ── Assembly ───────────────────────────────────────────────────────────────────
 
 /**
@@ -398,7 +436,7 @@ function tiles(x: Xfer | null): string {
  * `log` is the transfer's lab log; its lines' times anchor their typing and static.
  * `who` is the mascot pack's words; the faces are its pictures.
  */
-export function oozeSvg(x: Xfer | null, now: number, faces: Faces = {}, log: Log | null = null, who: MascotText = DEFAULT_TEXT): string {
+export function oozeSvg(x: Xfer | null, now: number, faces: Faces = {}, log: Log | null = null, who: MascotText = DEFAULT_TEXT, deploy: Deploy | null = null): string {
   const doneAt = log?.lines.find(l => l.text.startsWith("JOB'S DONE"))?.at ?? now
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
   <defs>
@@ -439,5 +477,6 @@ export function oozeSvg(x: Xfer | null, now: number, faces: Faces = {}, log: Log
   ${labLog(x, log, now, who)}
   ${plumbing(x, now)}
   ${tiles(x)}
+  ${deployLight(deploy, now)}
 </svg>`
 }

@@ -96,3 +96,12 @@ test('only a real rsync/scp to a host counts as a raw transfer', async () => {
   expect(isRawTransfer('rsync -a ./a/ ./b/')).toBe(false)
   expect(isRawTransfer('which rsync')).toBe(false)
 })
+
+test('the deploy light says idle, deploying, deployed or failed', async () => {
+  const d = { id: 'd1', label: 'Shop', note: 'v1.2', state: 'running' as const, step: 'Syncing theme', steps: [], startedAt: 0, endedAt: 0, updatedAt: 0 }
+  expect(oozeSvg(null, 1000)).toContain('NO DEPLOYS YET')
+  expect(oozeSvg(null, 1000, {}, null, undefined, d)).toContain('DEPLOYING · SHOP')
+  expect(oozeSvg(null, 1000, {}, null, undefined, d)).toContain('SYNCING THEME')
+  expect(oozeSvg(null, 1000, {}, null, undefined, { ...d, state: 'done', endedAt: 42000 })).toContain('DEPLOYED · SHOP · V1.2')
+  expect(oozeSvg(null, 1000, {}, null, undefined, { ...d, state: 'error', note: 'exit 23', endedAt: 5000 })).toContain('DEPLOY FAILED · SHOP')
+})

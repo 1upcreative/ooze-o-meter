@@ -28,7 +28,7 @@ You need Claude Code, `rsync`, and `python3` (macOS and Linux ship both).
 
 Answer `y` to add the marketplace, then pick the user scope.
 
-**2. Get the `ooze-xfer` command.** In a terminal:
+**2. Get the `ooze-xfer` and `ooze-deploy` commands.** In a terminal:
 
 ```bash
 git clone https://github.com/1upcreative/ooze-o-meter.git ~/.ooze-o-meter
@@ -38,7 +38,7 @@ git clone https://github.com/1upcreative/ooze-o-meter.git ~/.ooze-o-meter
 ~/.ooze-o-meter/install.sh
 ```
 
-The installer links `ooze-xfer` into `~/.local/bin`. If that folder isn't on your PATH, it tells you the line to add.
+The installer links `ooze-xfer` and `ooze-deploy` into `~/.local/bin`. If that folder isn't on your PATH, it tells you the line to add.
 
 ## Use it
 
@@ -56,6 +56,35 @@ Two commands live inside Claude Code:
 - `/ooze-demo` runs a fake 8-second transfer so you can see it work.
 
 If you type a plain `rsync` or `scp` to a remote host in Claude Code, the bench still opens. It can't measure bytes that way, so the ooze sloshes until the copy finishes.
+
+## Deploy light
+
+A strip under the bench shows your last deploy at a glance:
+
+- **Grey:** no deploys yet.
+- **Amber, pulsing:** a deploy is running. The step it's on shows underneath.
+- **Green:** it finished. You see when, and how long it took.
+- **Red:** it failed. You see when, and the exit code.
+
+The bench pops open when a deploy starts, and a toast tells you when it ends.
+
+Wrap the deploy script you already have. You don't need to change it:
+
+```bash
+ooze-deploy run "My site" --note "v1.2" -- ./deploy.sh
+```
+
+Lines your script prints that start with `→`, `==>` or `Step ` become the step on the lamp. Everything still prints to your terminal, and the exit code is your script's. Set `OOZE_STEP_RE` to match a different pattern.
+
+If you'd rather drive it by hand from inside a script:
+
+```bash
+ooze-deploy start "My site" --note "v1.2"
+ooze-deploy step "Backing up"
+ooze-deploy done          # or: ooze-deploy fail --note "why"
+```
+
+Use `ooze-xfer` for the file copies inside the deploy and the canister fills for each one while the lamp stays amber.
 
 ## Bring your own specimen
 
@@ -109,6 +138,8 @@ The bench looks for a pack in this order: the folder named by `OOZE_MASCOT`, the
 ## How it works
 
 `ooze-xfer` runs rsync twice. The first pass is a dry run that adds up how many bytes need to move. The second pass moves them with `--progress`, and a small Python script turns that output into `~/.claude/ooze/transfer.json`. The plugin reads that file a few times a second and redraws the bench.
+
+`ooze-deploy` writes `~/.claude/ooze/deploy.json`: the deploy's label, note, state and steps, plus the last five that finished. The plugin checks it once a second.
 
 ## Development
 

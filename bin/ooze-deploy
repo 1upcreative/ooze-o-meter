@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# ooze-deploy — lights the Ooze-o-Meter's deploy light while a deploy runs.
+#
+#   ooze-deploy run "Site name" [--note "v1.2"] -- ./your-deploy-script.sh [args...]
+#       Runs the script, lights the lamp amber while it works, green or red when it ends.
+#       Lines the script prints that start with → ==> or "Step" show up as the current step.
+#       Output still reaches your terminal. The exit code is the script's own.
+#
+#   ooze-deploy start "Site name" [--note "v1.2"]   Light it by hand...
+#   ooze-deploy step "Backing up"                    ...say what's happening...
+#   ooze-deploy done [--note "v1.2"]                 ...and finish it green
+#   ooze-deploy fail [--note "why"]                  ...or red.
+#
+# Writes ~/.claude/ooze/deploy.json. Touches nothing else.
+set -uo pipefail
+
+OOZE_DIR="${OOZE_DIR:-$HOME/.claude/ooze}"
+SELF="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+HERE="$(cd "$(dirname "$SELF")" && pwd)"
+STEP_RE="${OOZE_STEP_RE:-^(→|==>|Step )}"
+mkdir -p "$OOZE_DIR"
+export OOZE_DIR
+
+feed() { python3 -I "$HERE/ooze_deploy.py" "$@"; }
+
+usage() { sed -n '3,14p' "$SELF" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+
+CMD="${1:-}"; shift || true
+case "$CMD" in
+  start)
+    [ $# -ge 1 ] || usage
+    LABEL="$1"; shift; NOTE=""
+    [ "${1:-}" = "--note" ] && NOTE="${2:-}"
+    feed start "$LABEL" "$NOTE" ;;
+  step)
+    [ $# -ge 1 ] || usage
+    feed step "$1" ;;
+  done|fail)
+    NOTE=""; [ "${1:-}" = "--note" ] && NOTE="${2:-}"
+    feed "$CMD" "$NOTE" ;;
+  run)
+    [ $# -ge 1 ] || usage
+    LABEL="$1"; shift; NOTE=""
+    if [ "${1:-}" = "--note" ]; then NOTE="${2:-}"; shift 2; fi
+    [ "${1:-}" = "--" ] && shift
+    [ $# -ge 1 ] || usage
+    feed start "$LABEL" "$NOTE"
+    # Pass every line through; the ones that look like steps also go to the lamp.
+    "$@" 2>&1 | while IFS= read -r line; do
+      printf '%s\n' "$line"
+      if [[ "$line" =~ $STEP_RE ]]; then feed step "$line"; fi
+    done
+    CODE=${PIPESTATUS[0]}
+    if [ "$CODE" -eq 0 ]; then feed done "$NOTE"; else feed fail "exit $CODE"; fi
+    exit "$CODE" ;;
+  *) usage ;;
+esac

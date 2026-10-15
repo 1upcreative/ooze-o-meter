@@ -1,6 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Xfer } from '../types'
+import type { Deploy, Xfer } from '../types'
 import { DEFAULT_TEXT, oozeSvg } from './art'
 import type { FaceName, Faces, MascotText } from './art'
 import { size } from './format'
@@ -11,6 +11,8 @@ const TITLE = 'Ooze-o-Meter'
 const XFER = { plugin: 'ooze-o-meter', key: 'xfer' } as const
 const DINGED = { plugin: 'ooze-o-meter', key: 'dinged' } as const
 const LOG = { plugin: 'ooze-o-meter', key: 'log' } as const
+const DEPLOY = { plugin: 'ooze-o-meter', key: 'deploy' } as const
+const DEPLOY_DINGED = { plugin: 'ooze-o-meter', key: 'deployDinged' } as const
 
 const FACE_NAMES: FaceName[] = ['base', 'blink', 'excited', 'done', 'warm']
 
@@ -89,6 +91,8 @@ export const register: Register = on => {
   let lastSeen = 0
   let lastPushed = 0
   let openedFor = ''
+  let deploySeen = 0
+  let deployOpenedFor = ''
   // The mascot pack, read once per load (a reload just reads it again).
   let mascot: Mascot | null = null
 
@@ -98,6 +102,32 @@ export const register: Register = on => {
 
     const home = (await $.env.get('HOME')) ?? ''
     const feed = `${home}/.claude/ooze/transfer.json`
+    const deployFeed = `${home}/.claude/ooze/deploy.json`
+
+    // The deploy light: amber while ooze-deploy runs, then green or red, with one toast at the end.
+    $.clock.every(1000, async () => {
+      let d: Deploy
+      try {
+        d = JSON.parse(await $.fs.read(deployFeed)) as Deploy
+      } catch {
+        return
+      }
+      if (d.updatedAt === deploySeen) return
+      deploySeen = d.updatedAt
+      await $.state.set(DEPLOY, d)
+      const now = await $.clock.now()
+      const isFresh = now - d.updatedAt < 20000
+      if (d.state === 'running' && isFresh && deployOpenedFor !== d.id) {
+        deployOpenedFor = d.id
+        await $.ui.open({ id: PANE, title: TITLE })
+      }
+      if (d.state !== 'running' && isFresh) {
+        const { value: dinged } = await $.state.get(DEPLOY_DINGED)
+        if (dinged === d.id) return
+        await $.state.set(DEPLOY_DINGED, d.id)
+        $.ui.toast(d.state === 'done' ? `Deployed! ${d.label}${d.note ? ` · ${d.note}` : ''}` : `Deploy failed: ${d.label}${d.note ? ` (${d.note})` : ''}`)
+      }
+    })
 
     $.clock.every(400, async () => {
       let x: Xfer
@@ -236,6 +266,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { value: x = null } = await $.state.get(XFER)
+    const { value: deploy = null } = await $.state.get(DEPLOY)
     const now = await $.clock.now()
 
     if (e.surface === 'desktop' || e.surface === 'vscode' || e.surface === 'mobile') {
@@ -252,11 +283,17 @@ export const register: Register = on => {
             : `${x.label}: ${Math.floor(x.pct)} percent, ${size(x.done)} of ${size(x.total)}`
       // Drawn as an image, not an interactive frame: the frame blocks the painted face
       // frames, while an SVG image keeps its data: images and still runs SMIL.
-      return <Svg source={oozeSvg(x, now, mascot.faces, log, mascot.text)} alt={alt} />
+      const deployAlt = deploy === null ? '' : deploy.state === 'running' ? `. Deploying ${deploy.label}` : deploy.state === 'done' ? `. Last deploy ${deploy.label} succeeded` : `. Last deploy ${deploy.label} failed`
+      return <Svg source={oozeSvg(x, now, mascot.faces, log, mascot.text, deploy)} alt={alt + deployAlt} />
     }
 
     const { Box, Text } = $.ui.resolve(e)
-    if (!x) return <Text dimColor>Ooze-o-Meter standing by.</Text>
+    const lamp = deploy === null ? null : (
+      <Text color={deploy.state === 'running' ? '#ffc24a' : deploy.state === 'done' ? '#39ff14' : '#ff5a4f'}>
+        ● {deploy.state === 'running' ? `Deploying ${deploy.label}${deploy.step ? ` · ${deploy.step}` : ''}` : deploy.state === 'done' ? `Deployed ${deploy.label}${deploy.note ? ` · ${deploy.note}` : ''}` : `Deploy failed: ${deploy.label}`}
+      </Text>
+    )
+    if (!x) return <Box flexDirection="column"><Text dimColor>Ooze-o-Meter standing by.</Text>{lamp}</Box>
     const cols = Math.max(10, Math.min(48, (e.props.bodyColumns ?? 40) - 8))
     const filled = x.state === 'done' ? cols : Math.round((cols * x.pct) / 100)
     return (
@@ -267,6 +304,7 @@ export const register: Register = on => {
           <Text dimColor>{'░'.repeat(cols - filled)}</Text> {Math.floor(x.pct)}%
         </Text>
         <Text dimColor>{size(x.done)} / {size(x.total)}</Text>
+        {lamp}
       </Box>
     )
   })
