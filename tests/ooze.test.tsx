@@ -4,6 +4,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Xfer } from '../types'
 import { oozeSvg } from '../hooks/art'
 import { advanceLog, visibleLines } from '../hooks/log'
+import { isRawTransfer } from '../hooks/register'
 
 const BASE: Xfer = {
   id: 't',
@@ -85,4 +86,13 @@ test('the pane stands by before any transfer, on every surface', async ($, on) =
     expect(found).toBeDefined()
     await ui.unmount()
   }
+})
+
+test('only a real rsync/scp to a host counts as a raw transfer', async () => {
+  expect(isRawTransfer('rsync -az ./site/ me@host:/var/www/')).toBe(true)
+  expect(isRawTransfer('cd /tmp && scp file.zip host:/backups/')).toBe(true)
+  expect(isRawTransfer('git commit -m "Ooze-o-Meter: live rsync progress"')).toBe(false)
+  expect(isRawTransfer('gh repo create x --description "rsync moves files: fast"')).toBe(false)
+  expect(isRawTransfer('rsync -a ./a/ ./b/')).toBe(false)
+  expect(isRawTransfer('which rsync')).toBe(false)
 })

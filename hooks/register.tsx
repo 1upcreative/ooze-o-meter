@@ -14,8 +14,16 @@ const LOG = { plugin: 'ooze-o-meter', key: 'log' } as const
 
 const FACE_NAMES: FaceName[] = ['base', 'blink', 'excited', 'done', 'warm']
 
-// A raw rsync/scp to or from a host (host:path), typed straight into Bash.
-const RAW_XFER = /\b(rsync|scp)\b[^|;&]*\s[\w.@-]+:/
+/**
+ * A raw rsync/scp to or from a host, typed straight into Bash: some segment of the command
+ * line (split on && || ; | and newlines) must START with rsync or scp and name a host:path.
+ * The word "rsync" inside a commit message or a description is not a transfer.
+ */
+function isRawTransfer(command: string): boolean {
+  return command.split(/&&|\|\||[;|\n]/).some(segment =>
+    /^\s*(?:sudo\s+|time\s+|[A-Z_]+=\S+\s+)*(rsync|scp)\s/.test(segment) && /\s[\w.@-]+:\S*/.test(segment),
+  )
+}
 
 /** A loaded mascot pack: its words, its face frames as data: URIs, its finish sound. */
 type Mascot = { text: MascotText; faces: Faces; sound?: { base64: string; mime: string } }
@@ -73,6 +81,8 @@ async function loadMascot($: EngineInterface): Promise<Mascot> {
   }
   return { text: DEFAULT_TEXT, faces: {} }
 }
+
+export { isRawTransfer }
 
 export const register: Register = on => {
   // Module-level poll bookkeeping only; anything a drawing reads lives in $.state.
@@ -186,7 +196,7 @@ export const register: Register = on => {
 
   // Raw rsync/scp straight to a host: no % to read, so the ooze sloshes until it ends.
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
-    const isRaw = RAW_XFER.test(e.command) && !/ooze-xfer/.test(e.command) && !e.run_in_background
+    const isRaw = isRawTransfer(e.command) && !/ooze-xfer/.test(e.command) && !e.run_in_background
     if (!isRaw) return next(e)
 
     const start = await $.clock.now()
